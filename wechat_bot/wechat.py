@@ -2,7 +2,6 @@
 WeChat Bot for macOS - 微信自动发消息机器人
 """
 
-import os
 import time
 import subprocess
 import pyautogui
@@ -74,32 +73,7 @@ class WeChatMac:
         if result.returncode != 0:
             logging.error("未检测到WeChat进程")
             raise WeChatNotRunningError("WeChat未运行，请先启动微信")
-        logging.info(f"检测到WeChat进程，返回码：{result.returncode}，输出：{result.stdout.decode().strip()}")
-
-        # """
-        # 检查微信是否已登录
-        # """
-        # script = '''
-        # tell application "System Events"
-        #     if not (exists window 1 of process "WeChat") then
-        #         return false
-        #     end if
-        #     tell process "WeChat"
-        #         try
-        #             -- 尝试获取主窗口标题
-        #             get title of window 1
-        #             return true
-        #         on error
-        #             return false
-        #         end try
-        #     end tell
-        # end tell
-        # '''
-        # result = self._run_applescript(script)
-        # if result.lower() != "true":
-        #     raise WeChatLoginRequiredError("WeChat未登录，请先登录微信")
-        # logging.info("WeChat 已登录")
-        pass
+        logging.info("检测到WeChat进程")
 
     def _run_applescript(self, script):
         """
@@ -124,7 +98,7 @@ class WeChatMac:
         logging.info("正在激活微信窗口")
         try:
             subprocess.run(['open', '-a', 'WeChat'], check=True)
-            time.sleep(0.3)  # 减少等待时间: 0.5 -> 0.3
+            time.sleep(0.3) 
             logging.info("微信窗口已激活")
         except subprocess.CalledProcessError as e:
             logging.error(f"激活微信窗口失败: {e}")
@@ -152,7 +126,7 @@ class WeChatMac:
         try:
             # 使用剪贴板传递中文名称
             pyperclip.copy(chat_name)
-            time.sleep(0.1)  # 减少等待: 0.2 -> 0.1
+            time.sleep(0.1)  
             
             # 首先按下command+F打开搜索
             script = '''
@@ -177,8 +151,8 @@ class WeChatMac:
             '''
             self._run_applescript(script)
             
-            # 等待窗口切换完成 - 减少等待: 1.0 -> 0.5
-            time.sleep(0.5)  
+            # 等待窗口切换完成 
+            time.sleep(1.5)  
             logging.info(f"已切换到聊天窗口: {chat_name}")
             return True
             
@@ -186,69 +160,130 @@ class WeChatMac:
             # 恢复原始剪贴板内容
             pyperclip.copy(old_clipboard)
 
+    def _prepare_message(self, message):
+        """
+        准备消息发送，将消息复制到剪贴板
+        Args:
+            message: 要发送的消息内容
+        Returns:
+            bool: 是否成功准备消息
+        """
+        if not message:
+            logging.warning("尝试发送空消息")
+            return False
+            
+        logging.debug(f"准备发送消息，长度: {len(message)}")
+        
+        # 清空并设置剪贴板
+        pyperclip.copy('')
+        time.sleep(0.1)
+        pyperclip.copy(message)
+        
+        # 验证消息是否成功复制到剪贴板
+        timeout = 0.3
+        start_time = time.time()
+        while pyperclip.paste() != message:
+            if time.time() - start_time > timeout:
+                logging.error("消息复制到剪贴板失败")
+                return False
+            time.sleep(0.05)
+        
+        logging.debug("消息已成功复制到剪贴板")
+        return True
+
+    def _paste_and_send(self):
+        """
+        执行消息的粘贴和发送操作
+        Returns:
+            bool: 是否成功发送消息
+        """
+        try:
+            # 激活输入区域
+            self._activate_input_area()
+            
+            # 粘贴消息
+            script = '''
+            tell application "System Events"
+                tell process "WeChat"
+                    keystroke "v" using {command down}
+                end tell
+            end tell
+            '''
+            self._run_applescript(script)
+            
+            # 根据消息长度等待适当时间
+            time.sleep(0.3)
+            
+            # 发送消息
+            script = '''
+            tell application "System Events"
+                tell process "WeChat"
+                    keystroke return
+                end tell
+            end tell
+            '''
+            self._run_applescript(script)
+            
+            time.sleep(0.3)
+            return True
+            
+        except Exception as e:
+            logging.error(f"发送消息时发生错误: {str(e)}")
+            return False
+
     def send_message(self, message):
         """
         发送消息
         Args:
             message: 要发送的消息内容
+        Returns:
+            bool: 是否成功发送消息
         """
-        if not message:
-            logging.warning("尝试发送空消息，已忽略")
-            return
+        if not self._prepare_message(message):
+            return False
             
-        logging.info(f"准备发送消息，长度: {len(message)}")
-        # 激活输入窗口
-        self._activate_input_area()
+        return self._paste_and_send()
+
+    def send_messages_to_recipients(self, message, recipients):
+        """
+        批量发送消息给多个接收者
+        Args:
+            message: 要发送的消息内容
+            recipients: 接收者列表，每个元素为聊天窗口名称
+        Returns:
+            dict: 每个接收者的发送状态，格式为 {recipient: success_status}
+        """
+        if not message or not recipients:
+            logging.warning("消息内容或接收者列表为空")
+            return {}
             
-        # 清空剪贴板并复制消息 - 减少等待: 0.2 -> 0.1
-        pyperclip.copy('')
-        time.sleep(0.1)
-        pyperclip.copy(message)
+        logging.info(f"准备向 {len(recipients)} 个接收者发送消息")
+        results = {}
         
-        # 动态等待消息复制到剪贴板，但使用更短的轮询间隔
-        timeout = 0.3  # 减少超时: 0.5 -> 0.3
-        start_time = time.time()
-        while pyperclip.paste() != message:
-            if time.time() - start_time > timeout:
-                logging.error("消息复制到剪贴板失败")
-                raise WeChatError("无法将消息复制到剪贴板")
-            time.sleep(0.05)  # 减少轮询间隔: 0.1 -> 0.05
+        # 预先准备消息，避免重复操作
+        if not self._prepare_message(message):
+            return {recipient: False for recipient in recipients}
         
-        logging.debug("消息已成功复制到剪贴板")
+        for recipient in recipients:
+            try:
+                logging.info(f"正在发送消息给: {recipient}")
+                if self.find_chat(recipient):
+                    success = self._paste_and_send()
+                    results[recipient] = success
+                    log_level = logging.INFO if success else logging.ERROR
+                    logging.log(log_level, f"发送消息给 {recipient}: {'成功' if success else '失败'}")
+                else:
+                    results[recipient] = False
+                    logging.error(f"未找到聊天窗口: {recipient}")
+            except Exception as e:
+                results[recipient] = False
+                logging.error(f"发送消息给 {recipient} 时发生错误: {str(e)}")
         
-        # 计算基于消息长度的延迟时间，但减少基础延迟
-        base_delay = 0.1  # 减少基础延迟: 0.2 -> 0.1
-        # 对于大消息，限制最大额外延迟时间
-        length_factor = min(len(message) / 2000, 1.5)  # 调整系数
-        paste_delay = base_delay + length_factor
-        
-        # 粘贴消息
-        script = '''
-        tell application "System Events"
-            tell process "WeChat"
-                keystroke "v" using {command down}
-            end tell
-        end tell
-        '''
-        self._run_applescript(script)
-        
-        # 等待粘贴完成
-        time.sleep(paste_delay)
-        
-        # 发送消息
-        script = '''
-        tell application "System Events"
-            tell process "WeChat"
-                keystroke return
-            end tell
-        end tell
-        '''
-        self._run_applescript(script)
-        
-        # 减少等待: 0.5 -> 0.3
-        time.sleep(0.3)
-        logging.info("消息发送完成")
-        
+        # 统计发送结果
+        success_count = sum(1 for status in results.values() if status)
+        logging.info(f"批量发送完成。成功: {success_count}/{len(recipients)}")
+        return results
+
     def _activate_input_area(self):
         """
         激活聊天窗口中的输入区域
@@ -296,10 +331,7 @@ class WeChatMac:
                     
             except (ValueError, IndexError) as e:
                 logging.warning(f"解析窗口信息失败: {e}, 使用默认值")
-                # 使用屏幕大小作为后备方案
-                x, y = 0, 0
-                width = screen_width
-                height = screen_height
+                raise WeChatError("解析窗口信息失败")
             
             # 计算并点击输入框位置
             input_x = x + width // 2
@@ -307,44 +339,11 @@ class WeChatMac:
             
             if 0 <= input_x < screen_width and 0 <= input_y < screen_height:
                 pyautogui.click(input_x, input_y)
-                time.sleep(0.1)  # 减少等待: 0.2 -> 0.1
+                time.sleep(0.1) 
                 
                 logging.debug("已点击微信输入区域")
             else:
                 logging.warning("计算的点击位置超出屏幕范围，尝试Tab方法")
                 
-            # 不需要额外延迟，直接进入Tab键备份方案
-                
         except Exception as e:
             logging.warning(f"使用PyAutoGUI点击输入区域失败: {e}")
-
-        # 作为备份策略，尝试使用Tab键
-        logging.debug("尝试使用Tab键切换到输入框")
-        script = '''
-        tell application "System Events"
-            tell process "WeChat"
-                key code 53
-                delay 0.1
-                keystroke tab
-            end tell
-        end tell
-        '''
-        try:
-            self._run_applescript(script)
-            time.sleep(0.1)  # 减少等待: 0.2 -> 0.1
-            logging.debug("已使用Tab键尝试切换到输入框")
-        except Exception as e:
-            logging.warning(f"使用Tab键切换焦点失败: {e}")
-
-class WeChatMessage:
-    """微信消息类，用于构造和解析消息"""
-    
-    def __init__(self, content, sender=None, timestamp=None, is_group=False, group_name=None):
-        self.content = content
-        self.sender = sender
-        self.timestamp = timestamp or time.time()
-        self.is_group = is_group
-        self.group_name = group_name
-
-    def __str__(self):
-        return self.content

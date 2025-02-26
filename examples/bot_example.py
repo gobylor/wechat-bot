@@ -20,10 +20,15 @@ def main():
         # 初始化微信机器人
         bot = WeChatMac()
         
-        # 查找并切换到指定聊天
-        if bot.find_chat("File Transfer"):
-            # 发送消息
-            bot.send_message("Hello, Wechat-bot!")
+        # 示例：发送消息
+        recipients = ["File Transfer"]
+        message = "Hello World!"
+        results = bot.send_messages_to_recipients(message, recipients)
+        
+        # 打印发送结果
+        for recipient, success in results.items():
+            status = "成功" if success else "失败"
+            print(f"发送给 {recipient}: {status}")
             
     except WeChatPermissionError as e:
         logging.error(f"权限错误: {e}")
