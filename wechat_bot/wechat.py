@@ -32,6 +32,7 @@ class WeChatMac:
         初始化微信机器人
         """
         logging.info("初始化 WeChatMac 实例")
+        self.process_name = None  # 存储检测到的进程名称
         # 初始化时进行所有必要的检查
         self._check_permissions()
         self._check_wechat_running()
@@ -66,14 +67,27 @@ class WeChatMac:
 
     def _check_wechat_running(self):
         """
-        检查微信是否在运行
+        检查微信是否在运行，同时检查英文版和中文版
         """
         logging.info("正在检查微信是否在运行...")
-        result = subprocess.run(['pgrep', 'WeChat'], capture_output=True)
-        if result.returncode != 0:
-            logging.error("未检测到WeChat进程")
-            raise WeChatNotRunningError("WeChat未运行，请先启动微信")
-        logging.info("检测到WeChat进程")
+        
+        # 检查英文版微信进程
+        result_en = subprocess.run(['pgrep', 'WeChat'], capture_output=True)
+        if result_en.returncode == 0:
+            self.process_name = "WeChat"
+            logging.info("检测到英文版WeChat进程")
+            return
+            
+        # 检查中文版微信进程
+        result_cn = subprocess.run(['pgrep', '微信'], capture_output=True)
+        if result_cn.returncode == 0:
+            self.process_name = "微信"
+            logging.info("检测到中文版微信进程")
+            return
+            
+        # 如果两种进程都未检测到，则抛出异常
+        logging.error("未检测到WeChat或微信进程")
+        raise WeChatNotRunningError("WeChat/微信未运行，请先启动微信")
 
     def _run_applescript(self, script):
         """
@@ -97,7 +111,9 @@ class WeChatMac:
         """
         logging.info("正在激活微信窗口")
         try:
-            subprocess.run(['open', '-a', 'WeChat'], check=True)
+            # 使用进程名打开应用
+            app_name = "WeChat" if self.process_name == "WeChat" else "微信"
+            subprocess.run(['open', '-a', app_name], check=True)
             time.sleep(0.3) 
             logging.info("微信窗口已激活")
         except subprocess.CalledProcessError as e:
@@ -129,10 +145,10 @@ class WeChatMac:
             time.sleep(0.1)  
             
             # 首先按下command+F打开搜索
-            script = '''
+            script = f'''
             tell application "System Events"
-                tell process "WeChat"
-                    keystroke "f" using {command down}
+                tell process "{self.process_name}"
+                    keystroke "f" using {{command down}}
                     delay 0.1
                 end tell
             end tell
@@ -140,10 +156,10 @@ class WeChatMac:
             self._run_applescript(script)
             
             # 粘贴搜索内容并按回车
-            script = '''
+            script = f'''
             tell application "System Events"
-                tell process "WeChat"
-                    keystroke "v" using {command down}
+                tell process "{self.process_name}"
+                    keystroke "v" using {{command down}}
                     delay 1.5  
                     keystroke return
                 end tell
@@ -202,10 +218,10 @@ class WeChatMac:
             self._activate_input_area()
             
             # 粘贴消息
-            script = '''
+            script = f'''
             tell application "System Events"
-                tell process "WeChat"
-                    keystroke "v" using {command down}
+                tell process "{self.process_name}"
+                    keystroke "v" using {{command down}}
                 end tell
             end tell
             '''
@@ -215,9 +231,9 @@ class WeChatMac:
             time.sleep(0.3)
             
             # 发送消息
-            script = '''
+            script = f'''
             tell application "System Events"
-                tell process "WeChat"
+                tell process "{self.process_name}"
                     keystroke return
                 end tell
             end tell
@@ -300,9 +316,9 @@ class WeChatMac:
             screen_width, screen_height = pyautogui.size()
             
             # 获取窗口信息
-            script = '''
+            script = f'''
             tell application "System Events"
-                tell process "WeChat"
+                tell process "{self.process_name}"
                     set frontWindow to window 1
                     set winPos to position of frontWindow
                     set winSize to size of frontWindow

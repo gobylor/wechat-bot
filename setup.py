@@ -4,7 +4,7 @@ setup(
     name="wechat-bot",
     version="0.1.0",
     description="A safe and stable WeChat bot for macOS using AppleScript",
-    author="rl.yang",
+    author="Lor",
     url="https://github.com/gobylor/wechat-bot",
     packages=find_packages(),
     install_requires=[
