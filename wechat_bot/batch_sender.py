@@ -30,7 +30,7 @@ class BatchMessageSender:
         if message['type'] == 'image':
             if 'source' not in message:
                 return False
-            if message['source'] not in ['file']:
+            if message['source'] not in ['file', 'clipboard']:
                 return False
             if message['source'] == 'file' and 'path' not in message:
                 return False
@@ -112,10 +112,17 @@ class BatchMessageSender:
                         config_dir = Path(self.config_path).parent
                         image_path = config_dir / image_path
                     
-                    return self.wechat.send_image_to_recipients(
-                        str(image_path),
-                        recipients
-                    )
+                    # First copy the image to clipboard using osascript
+                    try:
+                        script = f'''
+                        set theImage to (POSIX file "{image_path}") as alias
+                        set the clipboard to (read theImage as «class PNGf»)
+                        '''
+                        self.wechat._run_applescript(script)
+                        return self.wechat.send_clipboard_to_recipients(recipients)
+                    except Exception as e:
+                        self.logger.error(f"Failed to copy image to clipboard: {e}")
+                        return {recipient: False for recipient in recipients}
         except Exception as e:
             self.logger.error(f"Error sending message: {e}")
             return {recipient: False for recipient in recipients}
