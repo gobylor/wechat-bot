@@ -1,0 +1,66 @@
+# 消息配置文件
+# 支持基于标签的消息路由，消息组和接收组通过标签进行匹配
+# 只要消息标签和群组标签有交集就会匹配成功
+# 如果群组标签与消息的黑名单标签有交集，则不会发送消息
+
+# 接收组定义
+groups:
+  # 技术组
+  tech_group:
+    tags: ["tech", "development"]
+    recipients:
+      - "技术交流群"
+      - "后端开发群"
+      - "张三"
+      - "李四"
+  
+  # 产品组
+  product_group:
+    tags: ["product", "design"]
+    recipients:
+      - "产品交流群"
+      - "设计交流群"
+      - "王五"
+      - "赵六"
+
+  # 运营组
+  operation_group:
+    tags: ["operation", "marketing"]
+    recipients:
+      - "运营交流群"
+      - "市场部群"
+      - "小明"
+      - "小红"
+
+# 消息定义
+messages:
+  # 技术更新消息
+  tech_update:
+    tags: ["tech"]
+    blacklist_tags: ["design", "marketing"]  # 不发送给设计和市场相关的群组
+    content:
+      - type: text
+        content: "技术更新通知：新版本发布"
+      - type: image
+        source: "file"
+        path: "images/tech_update.jpg"
+
+  # 产品更新消息
+  product_update:
+    tags: ["product", "design"]
+    blacklist_tags: ["development"]  # 不发送给开发相关的群组
+    content:
+      - type: text
+        content: "产品更新通知：新UI设计发布"
+      - type: image
+        source: "clipboard"
+
+  # 运营活动消息
+  marketing_campaign:
+    tags: ["operation", "marketing"]
+    blacklist_tags: []  # 可以为空，表示不设置黑名单
+    content:
+      - type: text
+        content: "运营通知：新活动开始"
+      - type: image
+        source: "clipboard"

@@ -169,3 +169,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# 忽略实际的配置文件，但保留示例文件
+configs/message_config.yaml
+!configs/message_config.example.yaml
+
+# 忽略资源文件，但保留 README
+resources/*
+!resources/README.md

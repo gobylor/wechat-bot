@@ -2,11 +2,13 @@
 WeChat Bot for macOS - 微信自动发消息机器人
 """
 
+from math import log
 import time
 import subprocess
 import pyautogui
 import pyperclip
 import logging
+import datetime
 
 class WeChatError(Exception):
     """微信机器人异常基类"""
@@ -389,33 +391,42 @@ class WeChatMac:
         try:
             import AppKit
             pasteboard = AppKit.NSPasteboard.generalPasteboard()
+            types = pasteboard.types()
+            logging.debug(f"剪贴板类型: {types}")
             
-            # 检查是否有图片内容
-            if pasteboard.dataForType_(AppKit.NSPasteboardTypeTIFF):
-                logging.debug("剪贴板包含TIFF图片内容")
-                return ('image', ('tiff', pasteboard.dataForType_(AppKit.NSPasteboardTypeTIFF)))
-            elif pasteboard.dataForType_(AppKit.NSPasteboardTypePNG):
-                logging.debug("剪贴板包含PNG图片内容")
-                return ('image', ('png', pasteboard.dataForType_(AppKit.NSPasteboardTypePNG)))
-                
-            # 检查是否有文本内容
-            if pasteboard.stringForType_(AppKit.NSPasteboardTypeString):
+            if AppKit.NSPasteboardTypeString in types:
                 text = pasteboard.stringForType_(AppKit.NSPasteboardTypeString)
                 logging.debug(f"从剪贴板获取文本内容: {text[:20]}...")
                 return ('text', text)
-                
-            # 检查是否有文件列表
-            if pasteboard.dataForType_(AppKit.NSPasteboardTypeFileURL):
-                logging.debug("剪贴板包含文件引用")
-                return ('file', pasteboard.dataForType_(AppKit.NSPasteboardTypeFileURL))
-                
-            logging.debug("剪贴板内容未知或为空")
-            return (None, None)
-            
+            elif AppKit.NSPasteboardTypeFileURL in types:
+                files = pasteboard.propertyListForType_(AppKit.NSPasteboardTypeFileURL)
+                if files:
+                    logging.debug(f"从剪贴板获取文件内容: {files}")
+                    return ('file', files)
+                logging.debug("剪贴板不包含文件")
+                return None
+            elif AppKit.NSPasteboardTypePDF in types:
+                return ('pdf', pasteboard.dataForType_(AppKit.NSPasteboardTypePDF))
+            elif AppKit.NSPasteboardTypeTIFF in types:
+                return ('image', ('tiff', pasteboard.dataForType_(AppKit.NSPasteboardTypeTIFF)))
+            elif AppKit.NSPasteboardTypePNG in types:
+                return ('image', ('png', pasteboard.dataForType_(AppKit.NSPasteboardTypePNG)))
+            else:
+                # Handle WeChat specific type
+                if "com.tencent.xinWeChat.message" in types:
+                    logging.debug("检测到微信消息类型的剪贴板内容")
+                    data = pasteboard.dataForType_("com.tencent.xinWeChat.message")
+                    if data:
+                        return ('wechat_message', data)
+                    logging.debug("无法获取微信消息内容")
+                logging.error("剪贴板包含其他格式的数据")
+                return None
+        
         except Exception as e:
-            logging.error(f"获取剪贴板内容时出错: {str(e)}")
-            # 回退到 pyperclip
-            return ('text', pyperclip.paste())
+            import traceback
+            logging.error(f"获取剪贴板内容时发生错误: {str(e)}")
+            logging.debug(f"错误详情: {traceback.format_exc()}")
+            return None
 
     def _set_clipboard_content(self, content):
         """
@@ -438,18 +449,26 @@ class WeChatMac:
             if content_type == 'text':
                 result = pasteboard.setString_forType_(data, AppKit.NSPasteboardTypeString)
                 logging.debug(f"设置剪贴板文本内容: {data[:20]}... 结果: {result}")
+            elif content_type == 'pdf':
+                result = pasteboard.setData_forType_(data, AppKit.NSPasteboardTypePDF)
+                logging.debug(f"设置剪贴板PDF内容 结果: {result}") 
             elif content_type == 'image':
                 img_type, img_data = data
                 if img_type == 'tiff':
                     result = pasteboard.setData_forType_(img_data, AppKit.NSPasteboardTypeTIFF)
-                else:  # png
+                elif img_type == 'png':
                     result = pasteboard.setData_forType_(img_data, AppKit.NSPasteboardTypePNG)
+                else:
+                    logging.error(f"不支持的图像格式: {img_type}")
                 logging.debug(f"设置剪贴板图片内容({img_type}) 结果: {result}")
             elif content_type == 'file':
-                result = pasteboard.setData_forType_(data, AppKit.NSPasteboardTypeFileURL)
-                logging.debug(f"设置剪贴板文件引用 结果: {result}")
+                result = pasteboard.setPropertyList_forType_([data], AppKit.NSPasteboardTypeFileURL)
+                logging.debug(f"设置剪贴板文件内容: {data} 结果: {result}")
+            elif content_type == 'wechat_message':
+                result = pasteboard.setData_forType_(data, "com.tencent.xinWeChat.message")
+                logging.debug(f"设置剪贴板微信消息内容 结果: {result}")
             else:
-                logging.warning(f"未知的剪贴板内容类型: {content_type}")
+                logging.error(f"未知的剪贴板内容类型: {content_type}")
                 
         except Exception as e:
             logging.error(f"设置剪贴板内容时出错: {str(e)}")
@@ -575,7 +594,7 @@ class WeChatMac:
                 logging.info(f"正在发送剪贴板内容给: {recipient}")
                 
                 # 使用临时文本进行联系人搜索，避免破坏剪贴板中的内容
-                temp_text = f"search_{recipient}_{int(time.time())}"
+                temp_text = f"search_{recipient}_{datetime.datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}"
                 self._set_clipboard_content(('text', temp_text))
                 
                 if self.find_chat(recipient):
